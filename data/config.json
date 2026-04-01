@@ -1,0 +1,12 @@
+{
+  "truck_capacity": 33,
+  "lead_time_hours": 4.0,
+  "cost_per_truck": 1.0,
+  "penalty_shortage": 50.0,
+  "penalty_excess": 0.05,
+  "max_trucks_per_warehouse": {
+    "WH_A": 8,
+    "WH_B": 12,
+    "WH_C": 10
+  }
+}

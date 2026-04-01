@@ -79,7 +79,11 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ./data:/opt/airflow/data           
+    - /var/run/docker.sock:/var/run/docker.sock
   user: "${AIRFLOW_UID:-50000}:0"
+  group_add:
+      - "${DOCKER_GROUP}"
   depends_on:
     &airflow-common-depends-on
     postgres:
@@ -92,6 +96,8 @@ services:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
+      #POSTGRES_HOST_AUTH_METHOD: trust
+      #POSTGRES_INITDB_ARGS: "--auth-host=trust"
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
@@ -117,6 +123,8 @@ services:
       <<: *airflow-common-depends-on
       airflow-init:
         condition: service_completed_successfully
+    volumes:
+      - ./data:/opt/airflow/data 
 
   airflow-scheduler:
     <<: *airflow-common
