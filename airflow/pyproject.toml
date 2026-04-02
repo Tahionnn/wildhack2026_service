@@ -10,4 +10,5 @@ dependencies = [
     "apache-airflow-providers-http>=6.0.1",
     "apache-airflow-providers-postgres>=6.6.2",
     "pandas>=3.0.2",
+    "tritonclient[grpc,utils]>=2.67.0",
 ]
