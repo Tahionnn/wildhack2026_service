@@ -1,11 +1,10 @@
-# broker_setup.py
-import os
 from faststream import FastStream
-from faststream.kafka import KafkaBroker  # or RabbitBroker
+from faststream.kafka import KafkaBroker
+from config import BROKER_URL
 
 # --- Broker Setup ---
 broker = KafkaBroker(
-    os.getenv("BROKER_URL", "localhost:9092")  # Use environment variables for configuration
+    BROKER_URL
 )
 app = FastStream(broker)
 

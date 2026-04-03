@@ -7,6 +7,7 @@ import api.api_pb2_grpc as api_pb2_grpc
 from models import CSVRow, TMSMessage, WMSMessage, YMSMessage
 from broker_setup import tms_publisher, wms_publisher, yms_publisher, broker
 from csv_parser import parse_csv_stream
+from config import GRPC_PORT
 
 class CSVUploadServicer(api_pb2_grpc.CSVUploadServiceServicer):
     async def UploadCSV(self, request_iterator, context):
@@ -83,7 +84,7 @@ async def serve():
     api_pb2_grpc.add_CSVUploadServiceServicer_to_server(
         CSVUploadServicer(), grpc_server
     )
-    grpc_server.add_insecure_port("[::]:50051")
+    grpc_server.add_insecure_port(f"[::]:{GRPC_PORT}")
     await grpc_server.start()
-    print("gRPC server is running on port 50051...")
+    print(f"gRPC server is running on port {GRPC_PORT}...")
     await grpc_server.wait_for_termination()
