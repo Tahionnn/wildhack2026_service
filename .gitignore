@@ -210,3 +210,9 @@ __marimo__/
 ./airflow/config/airflow.cfg
 ./airflow/log/
 airflow/config/airflow.cfg
+
+# Data
+./data/features_prepared.parquet
+./data/predictions.csv"
+./data/solver_input.csv
+./data/result.csv

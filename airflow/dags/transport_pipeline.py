@@ -6,6 +6,7 @@ from airflow.sdk import dag, task, task_group
 from airflow.sdk import BaseHook
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.providers.standard.sensors.filesystem import FileSensor
 from docker.types import Mount
 
 
@@ -29,28 +30,41 @@ default_args = {
     tags=["transport"],
 )
 def transport_pipeline():
+    wait_for_input = FileSensor(
+        task_id="wait_for_input_file",
+        filepath=f"/opt/airflow/data/test_team_track.parquet",
+        poke_interval=10,
+        timeout=60 * 5,
+        mode="poke",
+    )
+
     @task_group(group_id="features")
     def feature_engineering():
 
         @task
-        def extract_raw_data():
-            path = "/opt/airflow/data/test_team_track.parquet"
-            if not os.path.exists(path):
-                raise FileNotFoundError(path)
-            return path
+        def extract_raw_data(**context):
+            return {
+                "input": "/opt/airflow/data/test_team_track.parquet",
+                "run_id": context["run_id"]
+            }
 
         @task
-        def make_features(input_path: str):
+        def make_features(meta: dict):
             import pandas as pd
 
-            df = pd.read_parquet(input_path)
+            run_id = meta["run_id"]
 
-            output_path = "/opt/airflow/data/features_prepared.parquet"
+            os.makedirs(f"/opt/airflow/data/{run_id}", exist_ok=True)
+
+            df = pd.read_parquet(meta["input"])
+
+            output_path = f"/opt/airflow/data/{run_id}/features_prepared.parquet"
             df.to_parquet(output_path)
 
             return {
-                "original": input_path,
+                "original": meta["input"],
                 "featured": output_path,
+                "run_id": run_id
             }
 
         raw = extract_raw_data()
@@ -65,6 +79,8 @@ def transport_pipeline():
             import numpy as np
             import tritonclient.grpc as grpcclient
             from tritonclient.utils import InferenceServerException
+
+            run_id = data["run_id"]
 
             featured_path = data["featured"]
 
@@ -105,43 +121,80 @@ def transport_pipeline():
             result = df[["route_id", "timestamp"]].copy()
             result["target_2h"] = y_pred
 
-            out_path = "/opt/airflow/data/predictions.csv"
+            out_path = f"/opt/airflow/data/{run_id}/predictions.csv"
             result.to_csv(out_path, index=False)
 
-            return out_path
+            return {
+                "predictions": out_path,
+                "run_id": run_id,
+                "original": data["original"],
+            }
 
         return run_inference(feature_data)
-
+    
     @task_group(group_id="optimization")
-    def optimization(feature_data, inference_path):
+    def optimization(feature_data, inference_data):
 
         @task
-        def prepare_data(features: dict, pred_path: str):
+        def merge_inputs(features: dict, inference: dict):
+            return {
+                "original": features["original"],
+                "run_id": features["run_id"],
+                "predictions": inference["predictions"],
+            }
+
+        merged = merge_inputs(feature_data, inference_data)
+
+        @task
+        def prepare_data(data: dict):
             import pandas as pd
 
-            raw = pd.read_parquet(features["original"])
-            pred = pd.read_csv(pred_path)
+            run_id = data["run_id"]
+
+            raw = pd.read_parquet(data["original"])
+            pred = pd.read_csv(data["predictions"])
             route_map = pd.read_csv("/opt/airflow/data/route_map.csv")
 
-            raw['timestamp'] = pd.to_datetime(raw['timestamp'])
-            pred['timestamp'] = pd.to_datetime(pred['timestamp'])
+            raw["timestamp"] = pd.to_datetime(raw["timestamp"])
+            pred["timestamp"] = pd.to_datetime(pred["timestamp"])
 
             df = raw.merge(pred, on=["route_id", "timestamp"], how="left")
             df = df.merge(route_map, on="route_id", how="left")
 
             df = df.rename(columns={"target_2h": "predicted_demand"})
 
-            out = "/opt/airflow/data/solver_input.csv"
+            out = f"/opt/airflow/data/{run_id}/solver_input.csv"
             df.to_csv(out, index=False)
 
-            return out
+            return {
+                "solver_input": out,
+                "run_id": run_id,
+            }
 
-        prep = prepare_data(feature_data, inference_path)
+        prep = prepare_data(merged)
+
+        @task(task_id="build_solver_paths")
+        def build_solver_paths(data: dict):
+            run_id = data["run_id"]
+
+            return {
+                "input": f"{run_id}/solver_input.csv",
+                "output": f"{run_id}/result.csv",
+                "config": "config.json",
+                "run_id": run_id,
+            }
+
+        paths = build_solver_paths(prep)
 
         solve = DockerOperator(
             task_id="solve_transport",
             image="transport-optimizer:latest",
-            command="python /app/main.py /data/config.json /data/solver_input.csv /data/result.csv",
+            command="""
+            python /app/main.py 
+            /data/{{ ti.xcom_pull(task_ids='optimization.build_solver_paths')['config'] }} 
+            /data/{{ ti.xcom_pull(task_ids='optimization.build_solver_paths')['input'] }} 
+            /data/{{ ti.xcom_pull(task_ids='optimization.build_solver_paths')['output'] }}
+            """,
             mounts=[
                 Mount(
                     source=os.environ["DATA_PATH"],
@@ -153,32 +206,41 @@ def transport_pipeline():
             auto_remove="success",
             mount_tmp_dir=False,
             do_xcom_push=False,
-            user="root", # Need to fix this shit before deadline...
-            retries=0
+            user="root",  # Need to fix this shit before deadline...
+            retries=0,
         )
 
         @task
-        def publish():
-            import pandas as pd
+        def get_result_path(data: dict):
+            run_id = data["run_id"]
+            return {
+                "result_path": f"/opt/airflow/data/{run_id}/result.csv",
+                "run_id": run_id,
+            }
 
-            path = "/opt/airflow/data/result.csv"
-            df = pd.read_csv(path)
+        result = get_result_path(paths)
 
-            return {"rows": len(df)}
+        prep >> paths >> solve >> result
+        return result
 
-        pub = publish()
+    @task
+    def publish(data: dict):
+        from libs.grpc.client import upload_csv
 
-        prep >> solve >> pub
-        return pub
+        run_id = data["run_id"]
+
+        conn = BaseHook.get_connection("event_producer_grpc_conn")
+        target = f"{conn.host}:{conn.port}"
+        result_path = f"/opt/airflow/data/{run_id}/result.csv"
+        
+        return upload_csv(result_path, target)
 
     features = feature_engineering()
     inference = model_inference(features)
-    opt = optimization(features, inference)
+    result = optimization(features, inference)
+    pub = publish(result)
 
-    features >> inference >> opt
-
-    end = EmptyOperator(task_id="end")
-    opt >> end
+    wait_for_input >> features >> inference >> result >> pub
 
 
 transport_pipeline()

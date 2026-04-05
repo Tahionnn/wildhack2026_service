@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package csvupload;
+
+// Определение сервиса с клиентским стримингом
+service CSVUploadService {
+  // Клиент отправляет поток сообщений, сервер возвращает один ответ
+  rpc UploadCSV(stream CSVChunk) returns (UploadStatus);
+}
+
+// Сообщение для одного чанка (порции) данных
+message CSVChunk {
+  bytes content = 1; // Содержимое чанка в виде байтов
+}
+
+// Ответ сервера о результате обработки
+message UploadStatus {
+  bool success = 1;   // Успешность операции
+  string message = 2; // Дополнительное сообщение (например, количество обработанных строк)
+  int32 rows_processed = 3; // Количество обработанных строк CSV
+}

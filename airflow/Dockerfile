@@ -8,5 +8,5 @@ USER airflow
 
 RUN uv pip install --no-cache \
     "tritonclient[grpc]==2.41.0" \
-    "grpcio==1.67.1"
-
+    "grpcio==1.67.1" \
+    "protobuf>=5.26.0"

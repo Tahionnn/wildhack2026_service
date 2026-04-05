@@ -1,13 +1,10 @@
 import asyncio
 import grpc
-from grpc.aio import server
-from concurrent import futures
-import api.api_pb2 as api_pb2
-import api.api_pb2_grpc as api_pb2_grpc
+from api import api_pb2
+from api import api_pb2_grpc
 from models import CSVRow, TMSMessage, WMSMessage, YMSMessage
-from broker_setup import tms_publisher, wms_publisher, yms_publisher, broker
+from broker_setup import tms_publisher, wms_publisher, yms_publisher
 from csv_parser import parse_csv_stream
-from config import GRPC_PORT
 
 class CSVUploadServicer(api_pb2_grpc.CSVUploadServiceServicer):
     async def UploadCSV(self, request_iterator, context):
@@ -75,16 +72,3 @@ class CSVUploadServicer(api_pb2_grpc.CSVUploadServiceServicer):
             message="CSV file processed successfully",
             rows_processed=rows_processed
         )
-
-async def serve():
-    # Start the FastStream application (this connects to the broker)
-    await broker.start()
-    # Create and start the gRPC server
-    grpc_server = grpc.aio.server()
-    api_pb2_grpc.add_CSVUploadServiceServicer_to_server(
-        CSVUploadServicer(), grpc_server
-    )
-    grpc_server.add_insecure_port(f"[::]:{GRPC_PORT}")
-    await grpc_server.start()
-    print(f"gRPC server is running on port {GRPC_PORT}...")
-    await grpc_server.wait_for_termination()

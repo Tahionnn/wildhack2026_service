@@ -14,6 +14,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY . .
 
+RUN uv run python -m grpc_tools.protoc \
+    -I./api \
+    --python_out=./api \
+    --grpc_python_out=./api \
+    ./api/api.proto
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
@@ -23,7 +29,8 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app:/app/api
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
@@ -31,4 +38,6 @@ COPY --from=builder --chown=appuser:appuser /app /app
 
 USER appuser
 
-CMD ["python", "/app/main.py"]
+EXPOSE 8000 50051
+
+CMD ["faststream", "run", "main:app", "--host", "0.0.0.0", "--port", "8000"]
