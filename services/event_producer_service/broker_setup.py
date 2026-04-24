@@ -4,7 +4,8 @@ from config import BROKER_URL
 
 # --- Broker Setup ---
 broker = KafkaBroker(
-    BROKER_URL
+    BROKER_URL,
+    enable_idempotence=True
 )
 app = FastStream(broker)
 
