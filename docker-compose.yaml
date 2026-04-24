@@ -231,7 +231,7 @@ services:
 # INFERENCE
 # ===============================================================
   triton-server:
-    image: nvcr.io/nvidia/tritonserver:24.02-py3
+    image: custom_triton:latest
     container_name: triton_server
     ports:
       - "8000:8000" # HTTP
@@ -304,6 +304,16 @@ services:
       BROKER_URL: kafka:29092
     depends_on:
       - kafka
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+# ===============================================================
+# OBSERVABILITY
+# ===============================================================
 
 volumes:
   postgres-db-volume:

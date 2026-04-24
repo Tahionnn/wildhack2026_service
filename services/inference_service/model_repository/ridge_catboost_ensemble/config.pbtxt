@@ -1,0 +1,25 @@
+name: "ridge_catboost_ensemble"
+backend: "python"
+max_batch_size: 0
+input [
+  {
+    name: "INPUT_ARRAY"
+    data_type: TYPE_FP32
+    dims: [ -1, -1 ]
+  }
+]
+
+output [
+  {
+    name: "OUTPUT_PREDS"
+    data_type: TYPE_FP32
+    dims: [ -1, -1 ]
+  }
+]
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_CPU
+  }
+]
